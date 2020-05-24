@@ -2,25 +2,49 @@
 // 469-1025-ND funkar perfekt med 1 mm spacers, AGC runt 80
 // 469-1075-ND funkar perfekt utan spacers, AGC runt 90
 
-const int address = 0x36;
-const int dataBit = 7;
+int cMask = 0xC0;
+int fMask = 0xF3;
+int bMask = 0x70;
+int dMask = 0xF2;
+int eMask = 0x4;
+
+const int i2cAddress = 0x36;
 
 void I2C_delay(void) {
   delayMicroseconds(10);
 }
 
-int read_SDA() {
-  // Set ports to input
+void setInputMode() {
   DDRC = 0;
   DDRF = 0;
   DDRB = 0;
-  DDRD = 0;
+  DDRD = 0;  
+}
 
-  // Enable pullups
-  PORTC = 0xFF;
-  PORTF = 0xFF;
-  PORTB = 0xFF;
-  PORTD = 0xFF;
+void setOutputMode() {
+  DDRC = cMask;
+  DDRF = fMask;
+  DDRB = bMask;
+  DDRD = dMask;  
+}
+
+void setOutputs() {
+  PORTC = cMask;
+  PORTF = fMask;
+  PORTB = bMask;
+  PORTD = dMask;
+}
+
+void clearOutputs() {
+  PORTC = 0;
+  PORTF = 0;
+  PORTB = 0;
+  PORTD = 0;
+}
+
+int read_SDA() {
+  setInputMode();
+  setOutputs();
 
   // Read data
   int c = PINC;
@@ -51,31 +75,13 @@ int read_SDA() {
 }
 
 void set_SDA() {
-  // Enable pullups
-  PORTC = 0xFF;
-  PORTF = 0xFF;
-  PORTB = 0xFF;
-  PORTD = 0xFF;
-
-  // Set ports to output
-  DDRC = 0xFF;
-  DDRF = 0xFF;
-  DDRB = 0xFF;
-  DDRD = 0xFF;
+  setOutputs();
+  setOutputMode();
 }
 
 void clear_SDA() {
-  // Disable pullups
-  PORTC = 0;
-  PORTF = 0;
-  PORTB = 0;
-  PORTD = 0;
-
-  // Set ports to output
-  DDRC = 0xFF;
-  DDRF = 0xFF;
-  DDRB = 0xFF;
-  DDRD = 0xFF;
+  clearOutputs();
+  setOutputMode();
 
   /*  I2C_delay();
 
@@ -95,8 +101,8 @@ void write_SDA(int v) {
 //}
 
 void set_SCL() {
-  PORTE = 0xff;
-  DDRE = 0xff;
+  PORTE = eMask;
+  DDRE = eMask;
   /*  I2C_delay();
 
     if (myDigitalRead(sclPin) == LOW)
@@ -105,7 +111,7 @@ void set_SCL() {
 
 void clear_SCL() {
   PORTE = 0;
-  DDRE = 0xff;
+  DDRE = eMask;
   /*  I2C_delay();
 
     if (myDigitalRead(sclPin) == HIGH)
@@ -198,7 +204,7 @@ void setup() {
 void beginRead(int reg) {
   i2c_start();
 
-  if (i2c_write_byte((address << 1) | 0) != 0)
+  if (i2c_write_byte(i2cAddress << 1) != 0)
     error("Got NACK!");
 
   if (i2c_write_byte(reg) != 0)
@@ -207,28 +213,31 @@ void beginRead(int reg) {
   i2c_stop();
 }
 
-int endRead16() {
+void endRead16(int* values) {
   i2c_start();
 
-  if (i2c_write_byte((address << 1) | 1) != 0)
+  if (i2c_write_byte((i2cAddress << 1) | 1) != 0)
     error("Got NACK 16!");
 
-  int msb = i2c_read_byte(0);
-  int lsb = i2c_read_byte(1);
+  byte msbs[16];
+  byte lsbs[16];
+  i2c_read_byte(0, msbs);
+  i2c_read_byte(1, lsbs);
   i2c_stop();
-  return word(msb, lsb);
+
+  for (int i=0; i<16; i++)
+    values[i] = word(msbs[i], lsbs[i]);
 }
 
 void read8(int reg, byte* values) {
   beginRead(reg);
   i2c_start();
 
-  if (i2c_write_byte((address << 1) | 1) != 0)
+  if (i2c_write_byte((i2cAddress << 1) | 1) != 0)
     error("Got NACK 8!");
 
-  byte v = i2c_read_byte(1);
+  i2c_read_byte(1, values);
   i2c_stop();
-  return v;
 }
 
 int lv = 0;
@@ -247,28 +256,30 @@ void loop() {
 
   endRead16(angles);
   read8(0x1A, agcs);
+  //int u = read16(14) >> 3;
   unsigned long dt = micros() - t;
 
-  if (lv != v) {
-    //int u = read16(14) >> 3;
-    int agc = read8(0x1A);
-
-    Serial.print(lv);
-    Serial.print(" ");
-    Serial.print(v);
-    Serial.print(" ");
-    Serial.print(dt);
-    Serial.print(" ");
-    Serial.print(agc);
-    /*    Serial.print(", angle: ");
-        Serial.print(u);
-        Serial.print(", AGC: ");
-        Serial.print(agc);
-        Serial.print(", time: ");
-        Serial.print(dt);
-        Serial.print(" us");*/
-    Serial.println();
-    lv = v;
+  for (int i=0; i<16; i++) {
+    if (agcs[i] < 255 && angles[i] != lastAngles[i]) {
+      Serial.print(i);
+      Serial.print(": ");
+      Serial.print(lastAngles[i]);
+      Serial.print(" ");
+      Serial.print(angles[i]);
+      Serial.print(" ");
+      Serial.print(dt);
+      Serial.print(" ");
+      Serial.print(agcs[i]);
+      /*    Serial.print(", angle: ");
+          Serial.print(u);
+          Serial.print(", AGC: ");
+          Serial.print(agc);
+          Serial.print(", time: ");
+          Serial.print(dt);
+          Serial.print(" us");*/
+      Serial.println();
+      lastAngles[i] = angles[i];
+    }
   }
 
   dt = micros() - t;
