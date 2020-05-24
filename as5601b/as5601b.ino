@@ -11,7 +11,7 @@ int eMask = 0x4;
 const int i2cAddress = 0x36;
 
 void I2C_delay(void) {
-  delayMicroseconds(10);
+  delayMicroseconds(100);
 }
 
 void setInputMode() {
@@ -127,9 +127,11 @@ void write_SCL(int v) {
 
 bool started = false;
 
-void error(const char* text) {
+void error(const char* text, int v) {
   Serial.print("Error: ");
-  Serial.println(text);
+  Serial.print(text);
+  Serial.print(", ");
+  Serial.println(v, HEX);
 }
 
 void i2c_init() {
@@ -203,21 +205,25 @@ void setup() {
 
 void beginRead(int reg) {
   i2c_start();
+  int v = i2c_write_byte(i2cAddress << 1);
 
-  if (i2c_write_byte(i2cAddress << 1) != 0)
-    error("Got NACK!");
+  if (v != 0)
+    error("Got NACK!", v);
 
-  if (i2c_write_byte(reg) != 0)
-    error("Got NACK 2!");
+  int v2 = i2c_write_byte(reg);
+
+  if (v2 != 0)
+    error("Got NACK 2!", v2);
 
   i2c_stop();
 }
 
 void endRead16(int* values) {
   i2c_start();
-
-  if (i2c_write_byte((i2cAddress << 1) | 1) != 0)
-    error("Got NACK 16!");
+  int v = i2c_write_byte((i2cAddress << 1) | 1);
+  
+  if (v != 0)
+    error("Got NACK 16!", v);
 
   byte msbs[16];
   byte lsbs[16];
@@ -232,9 +238,10 @@ void endRead16(int* values) {
 void read8(int reg, byte* values) {
   beginRead(reg);
   i2c_start();
+  int v = i2c_write_byte((i2cAddress << 1) | 1);
 
-  if (i2c_write_byte((i2cAddress << 1) | 1) != 0)
-    error("Got NACK 8!");
+  if (v != 0)
+    error("Got NACK 8!", v);
 
   i2c_read_byte(1, values);
   i2c_stop();
