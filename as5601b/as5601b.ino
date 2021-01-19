@@ -128,10 +128,10 @@ void write_SCL(int v) {
 bool started = false;
 
 void error(const char* text, int v) {
-  Serial.print("Error: ");
+/*  Serial.print("Error: ");
   Serial.print(text);
   Serial.print(", ");
-  Serial.println(v, HEX);
+  Serial.println(v, HEX);*/
 }
 
 void i2c_init() {
@@ -251,7 +251,17 @@ int lv = 0;
 bool initReg = true;
 int angles[16];
 int lastAngles[16];
+int values[16];
 byte agcs[16];
+
+int delta(int a, int b) {
+  int d = b - a;
+
+  return 
+    d > 2048  ? d - 4096 :
+    d < -2048 ? d + 4096 :
+    d;
+}
 
 void loop() {
   unsigned long t = micros();
@@ -267,7 +277,9 @@ void loop() {
   unsigned long dt = micros() - t;
 
   for (int i=0; i<16; i++) {
-    if (agcs[i] < 255 && angles[i] != lastAngles[i]) {
+    int d = delta(lastAngles[i], angles[i]);
+    
+    if (agcs[i] < 255 && abs(d) >= 16) {
       Serial.print(i);
       Serial.print(": ");
       Serial.print(lastAngles[i]);
