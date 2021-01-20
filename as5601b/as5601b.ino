@@ -2,6 +2,35 @@
 // 469-1025-ND funkar perfekt med 1 mm spacers, AGC runt 80
 // 469-1075-ND funkar perfekt utan spacers, AGC runt 90
 
+/*
+ Arduino Mega 2560 as programmer
+ -------------------------------
+
+ ICSP on board:
+
+ Reset - SCK  - MISO
+ Gnd   - MOSI - 5V
+
+ Arduino pins:
+   50 = MISO
+   51 = MOSI
+   52 = SCK
+   10 = Reset
+
+ Capacitor 100 nF Reset <-> 5V (?)
+
+ Arduino IDE:
+
+ 1. Upload ArduinoISP example to Mega
+ 2. Set board to "Arduino Leonardo"
+ 3. Set programmer to "Arduino as ISP"
+ 4. Burn Bootloader
+
+ You can use USB power on board instead of 5V from Arduino
+
+*/
+
+
 int cMask = 0xC0;
 int fMask = 0xF3;
 int bMask = 0x70;
@@ -128,10 +157,10 @@ void write_SCL(int v) {
 bool started = false;
 
 void error(const char* text, int v) {
-/*  Serial.print("Error: ");
+  Serial.print("Error: ");
   Serial.print(text);
   Serial.print(", ");
-  Serial.println(v, HEX);*/
+  Serial.println(v, HEX);
 }
 
 void i2c_init() {
@@ -198,11 +227,6 @@ void i2c_read_byte(int nack, byte* values) {
   i2c_write_bit(nack);
 }
 
-void setup() {
-  Serial.begin(115200);  // start serial for output
-  i2c_init();
-}
-
 void beginRead(int reg) {
   i2c_start();
   int v = i2c_write_byte(i2cAddress << 1);
@@ -251,7 +275,6 @@ int lv = 0;
 bool initReg = true;
 int angles[16];
 int lastAngles[16];
-int values[16];
 byte agcs[16];
 
 int delta(int a, int b) {
@@ -261,6 +284,15 @@ int delta(int a, int b) {
     d > 2048  ? d - 4096 :
     d < -2048 ? d + 4096 :
     d;
+}
+
+void setup() {
+  Serial.begin(115200);  // start serial for output
+  i2c_init();
+
+  for (int i=0; i<16; i++) {
+    lastAngles[i] = -1;
+  }
 }
 
 void loop() {
@@ -277,28 +309,34 @@ void loop() {
   unsigned long dt = micros() - t;
 
   for (int i=0; i<16; i++) {
-    int d = delta(lastAngles[i], angles[i]);
-    
-    if (agcs[i] < 255 && abs(d) >= 16) {
-      Serial.print(i);
-      Serial.print(": ");
-      Serial.print(lastAngles[i]);
-      Serial.print(" ");
-      Serial.print(angles[i]);
-      Serial.print(" ");
-      Serial.print(dt);
-      Serial.print(" ");
-      Serial.print(agcs[i]);
-      /*    Serial.print(", angle: ");
-          Serial.print(u);
-          Serial.print(", AGC: ");
-          Serial.print(agc);
-          Serial.print(", time: ");
-          Serial.print(dt);
-          Serial.print(" us");*/
-      Serial.println();
-      lastAngles[i] = angles[i];
+    if (agcs[i] < 255 && lastAngles[i] != -1) {
+      int d = delta(lastAngles[i], angles[i]);
+      int ad = abs(d);
+
+      if (ad > 1) {
+        Serial.print(i);
+        Serial.print(": ");
+        Serial.print(lastAngles[i]);
+        Serial.print(" ");
+        Serial.print(angles[i]);
+        Serial.print(" ");
+        Serial.print(d);
+        Serial.print(" ");
+        Serial.print(agcs[i]);
+        Serial.print(" ");
+        Serial.print(dt);
+        /*    Serial.print(", angle: ");
+            Serial.print(u);
+            Serial.print(", AGC: ");
+            Serial.print(agc);
+            Serial.print(", time: ");
+            Serial.print(dt);
+            Serial.print(" us");*/
+        Serial.println();
+      }
     }
+
+    lastAngles[i] = angles[i];
   }
 
   dt = micros() - t;
