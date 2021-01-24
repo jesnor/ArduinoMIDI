@@ -30,6 +30,7 @@
 
 */
 
+#include "MIDIUSB.h"
 
 int cMask = 0xC0;
 int fMask = 0xF3;
@@ -271,12 +272,6 @@ void read8(int reg, byte* values) {
   i2c_stop();
 }
 
-int lv = 0;
-bool initReg = true;
-int angles[16];
-int lastAngles[16];
-byte agcs[16];
-
 int delta(int a, int b) {
   int d = b - a;
 
@@ -286,12 +281,25 @@ int delta(int a, int b) {
     d;
 }
 
+void controlChange(byte channel, byte control, byte value) {
+  midiEventPacket_t event = {0x0B, 0xB0 | channel, control, value};
+  MidiUSB.sendMIDI(event);
+}
+
+int lv = 0;
+bool initReg = true;
+int angles[16];
+int lastAngles[16];
+byte agcs[16];
+int ccComp[16];
+
 void setup() {
   Serial.begin(115200);  // start serial for output
   i2c_init();
 
   for (int i=0; i<16; i++) {
     lastAngles[i] = -1;
+    ccComp[i] = 0;
   }
 }
 
@@ -307,37 +315,60 @@ void loop() {
   read8(0x1A, agcs);
   //int u = read16(14) >> 3;
   unsigned long dt = micros() - t;
+  bool midiSend = false;
 
   for (int i=0; i<16; i++) {
-    if (agcs[i] < 255 && lastAngles[i] != -1) {
-      int d = delta(lastAngles[i], angles[i]);
-      int ad = abs(d);
+    int d = delta(lastAngles[i], angles[i]);
+    int ad = abs(d);
+      
+    if (agcs[i] < 255 && lastAngles[i] != -1 && ad > 1) {
+      int ccShift = 2;
+      int ccc = ccComp[i];
+      int dComp = d + ccComp[i];
+      int cv = dComp >> ccShift;
+      ccComp[i] = dComp - (cv << ccShift);
+      int ccValue = min(abs(cv), 63) | (cv >= 0 ? 0 : 0x40);
 
-      if (ad > 1) {
-        Serial.print(i);
-        Serial.print(": ");
-        Serial.print(lastAngles[i]);
-        Serial.print(" ");
-        Serial.print(angles[i]);
-        Serial.print(" ");
-        Serial.print(d);
-        Serial.print(" ");
-        Serial.print(agcs[i]);
-        Serial.print(" ");
-        Serial.print(dt);
-        /*    Serial.print(", angle: ");
-            Serial.print(u);
-            Serial.print(", AGC: ");
-            Serial.print(agc);
-            Serial.print(", time: ");
-            Serial.print(dt);
-            Serial.print(" us");*/
-        Serial.println();
+      if (ccValue != 0) {
+        controlChange(0, 16 + i, ccValue);
+        controlChange(0, 46 + i, agcs[i] >> 1);
+        midiSend = true;
       }
+      
+      Serial.print(i);
+      Serial.print(": ");
+      Serial.print(t);
+      Serial.print(" ");
+      Serial.print(lastAngles[i]);
+      Serial.print(" ");
+      Serial.print(angles[i]);
+      Serial.print(" ");
+      Serial.print(d);
+      Serial.print(" ");
+      Serial.print(agcs[i]);
+      Serial.print(" ");
+      Serial.print(dt);
+      Serial.print(" ");
+      Serial.print(cv);
+      Serial.print(":");
+      Serial.print(ccc);
+      Serial.print(":");
+      Serial.print(ccComp[i]);
+      /*    Serial.print(", angle: ");
+          Serial.print(u);
+          Serial.print(", AGC: ");
+          Serial.print(agc);
+          Serial.print(", time: ");
+          Serial.print(dt);
+          Serial.print(" us");*/
+      Serial.println();
     }
 
     lastAngles[i] = angles[i];
   }
+
+  if (midiSend)
+    MidiUSB.flush();
 
   dt = micros() - t;
   unsigned long d = 10000 - dt;
